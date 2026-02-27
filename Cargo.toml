@@ -1,0 +1,56 @@
+[package]
+name = "proxy_core"
+version = "0.1.0"
+edition = "2021"
+description = "Functional L7 proxy kernel inspired by Envoy, with à la Carte control plane"
+
+[features]
+default = []
+redb = ["dep:redb"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP types
+http = "1"
+bytes = "1"
+
+# Typed heterogeneous metadata map
+typemap_rev = "0.3"
+
+# Lock-free atomic pointer swap (hot reload)
+arc-swap = "1"
+
+# Serialization for config
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Hashing for config cache
+twox-hash = "2"
+
+# Cryptography: AES-256-GCM + HMAC-SHA256 + HKDF
+aes-gcm = "0.10"
+hmac = "0.12"
+sha2 = "0.10"
+hkdf = "0.12"
+
+# HTTP client for upstream forwarding
+reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+
+# Embedded ACID KV store (optional, pure Rust)
+redb = { version = "3.1.0", optional = true }
+
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+base64 = "0.22.1"
+sonic-rs = "0.5.7"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+opt-level = 3
