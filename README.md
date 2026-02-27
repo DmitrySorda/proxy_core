@@ -2,7 +2,6 @@
 
 **Functional L7 proxy kernel** — a programmable HTTP proxy and backend framework in Rust, inspired by Envoy's filter architecture and OpenResty's extensibility.
 
-250 tests · 15 000+ lines · zero `unsafe` · SIMD JSON (sonic-rs)
 
 ---
 
