@@ -137,6 +137,24 @@ Rotation:
 - server issues update token (`delta = y_new - y_old`);
 - records are updated with server-side contribution without requiring plaintext passwords.
 
+### PHE Threat Model and Limitations
+
+What this design protects against:
+- **offline password guessing from DB dump** — record data alone is insufficient to validate guesses;
+- **key recovery from stored records** — encryption key is reconstructed only after successful PHE verification;
+- **key exposure to clients** — PHE-derived key is written to request metadata only, never returned in HTTP payloads.
+
+What it does **not** protect against by itself:
+- **online brute force** if rate limiting / lockout is not configured;
+- **full backend compromise** (runtime memory + process control);
+- **weak operational key management** (e.g. leaked `PHE_SERVER_KEY` / `PHE_CLIENT_KEY`, poor rotation discipline).
+
+Operational requirements:
+- keep `PHE_SERVER_KEY`, `PHE_CLIENT_KEY`, and `PROXY_ENCRYPTION_KEY` in a secret manager;
+- enable `rate_limit` and authentication before PHE endpoints in production chain;
+- rotate PHE server key periodically and apply update token to stored records;
+- keep TLS enabled on all client↔backend and backend↔upstream links.
+
 ---
 
 ## Extension Points
