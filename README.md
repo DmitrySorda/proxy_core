@@ -345,6 +345,64 @@ The filter chain is defined as JSON (passed programmatically or from a config fi
 }
 ```
 
+### Minimal production example: `auth -> phe -> encrypt -> kv -> router`
+
+```json
+{
+  "filters": [
+    {
+      "name": "auth",
+      "typed_config": {
+        "strategy": "jwt",
+        "jwt_secret": "change-me-256-bit-secret",
+        "jwt_algorithm": "HS256"
+      }
+    },
+    {
+      "name": "phe",
+      "typed_config": {
+        "path_prefix": "/phe",
+        "server_key_env": "PHE_SERVER_KEY",
+        "client_key_env": "PHE_CLIENT_KEY"
+      }
+    },
+    {
+      "name": "encrypt",
+      "typed_config": {
+        "key_env": "PROXY_ENCRYPTION_KEY"
+      }
+    },
+    {
+      "name": "kv",
+      "typed_config": {
+        "path_prefix": "/kv",
+        "backend": "redb",
+        "db_path": "./proxy.redb",
+        "key_env": "PROXY_ENCRYPTION_KEY",
+        "encrypt_keys": true,
+        "encrypt_values": true
+      }
+    },
+    {
+      "name": "router",
+      "typed_config": {
+        "routes": [
+          {
+            "match": { "prefix": "/" },
+            "http": { "url": "http://127.0.0.1:9090", "timeout_ms": 5000 }
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+Required environment variables for this example:
+- `PHE_SERVER_KEY` — 32-byte hex private key for PHE service side.
+- `PHE_CLIENT_KEY` — 32-byte hex private key for backend side.
+- `PROXY_ENCRYPTION_KEY` — 32-byte hex key for `encrypt`/`kv` filters.
+
 ---
 
 ## Module Map
