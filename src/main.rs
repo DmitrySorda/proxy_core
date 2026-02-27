@@ -33,6 +33,7 @@ use proxy_core::filters::auth::AuthFactory;
 use proxy_core::filters::cors::CorsFactory;
 use proxy_core::filters::encrypt::EncryptFactory;
 use proxy_core::filters::kv::KvFactory;
+use proxy_core::filters::phe::PheFactory;
 use proxy_core::filters::rate_limit::RateLimitFactory;
 use proxy_core::filters::router::RouterFactory;
 use proxy_core::worker::{Worker, WorkerConfig};
@@ -63,6 +64,7 @@ async fn main() {
     registry.register(Box::new(AddHeaderFactory));
     registry.register(Box::new(EncryptFactory));
     registry.register(Box::new(KvFactory));
+    registry.register(Box::new(PheFactory));
     registry.register(Box::new(RouterFactory));
     let registry = Arc::new(registry);
 

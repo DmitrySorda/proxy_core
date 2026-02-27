@@ -2,7 +2,7 @@
 
 **Functional L7 proxy kernel** — a programmable HTTP proxy and backend framework in Rust, inspired by Envoy's filter architecture and OpenResty's extensibility.
 
-224 tests · 15 000+ lines · zero `unsafe` · SIMD JSON (sonic-rs)
+250 tests · 15 000+ lines · zero `unsafe` · SIMD JSON (sonic-rs)
 
 ---
 
@@ -38,7 +38,7 @@
 │   alive,    conn    │                                     │     │
 │   idle      limits) │  rate_limit → auth → cors →         │     │
 │   timeout,          │  access_log → add_header →          │     │
-│   graceful          │  encrypt → kv → router              │     │
+│   graceful          │  phe → encrypt → kv → router        │     │
 │   shutdown)         │       │              │              │     │
 │                     └───────┼──────────────┼──────────────┘     │
 │                             ▼              ▼                    │
@@ -73,13 +73,17 @@
   │ Filter 5  │  add_header                      │            │
   │           │  inject x-proxy header           │            │
   │           ▼                                  │            │
-  │ Filter 6  │  encrypt                         │  decrypt   │
+  │ Filter 6  │  phe                             │            │
+  │           │  enroll/verify password-hardened │           │
+  │           │  key, store key in metadata      │           │
+  │           ▼                                  │            │
+  │ Filter 7  │  encrypt                         │  decrypt   │
   │           │  AES-256-GCM body                │  response  │
   │           ▼                                  ▲            │
-  │ Filter 7  │  kv                              │            │
+  │ Filter 8  │  kv                              │            │
   │           │  handle /kv/* CRUD               │            │
   │           ▼                                  │            │
-  │ Filter 8  │  router (terminal)               │            │
+  │ Filter 9  │  router (terminal)               │            │
   │           │  match route → upstream          │            │
   └───────────┴──────────────────────────────────┴────────────┘
 ```
@@ -99,9 +103,39 @@ Each filter receives `&mut Request` + `&Effects` and returns `Verdict`:
 | `cors` | request + response | CORS preflight (OPTIONS → 204), response header injection |
 | `access_log` | request + response | Structured logging: method, path, status, latency (µs), peer addr |
 | `add_header` | request | Inject static headers (e.g., `x-proxy: proxy_core/0.1`) |
+| `phe` | request | Password-hardened key derivation (P-256), key in metadata only (never in HTTP response) |
 | `encrypt` | request + response | AES-256-GCM body encryption/decryption, HMAC key obfuscation |
 | `kv` | request | In-process KV store (memory or redb), encrypted at rest |
 | `router` | request (terminal) | Route dispatch: prefix, exact, pattern (`/users/:id`) → HTTP/redb upstream |
+
+### PHE Module: Why It Exists
+
+`phe` solves the weak-password problem for encrypted user data in backend services:
+- it ties encryption keys to user passwords **and** a server-side hardening secret;
+- offline DB dumps are insufficient for password guessing;
+- each login guess requires backend/PHE verification (online control + rate limiting);
+- encryption keys are not exposed to clients — only placed into request metadata for downstream filters.
+
+This enables a secure flow like: `auth` → `phe` → `encrypt/kv`, where encrypted profile data is only usable after successful password verification.
+
+### PHE Protocol Flow (Implemented)
+
+Enrollment:
+1. Server generates `sNonce`, computes `C0`, `C1`, and Schnorr proofs.
+2. Backend verifies proofs, computes `HC0`, `HC1` from `(password, cNonce, x)`.
+3. Backend samples random `M`, computes `MC`, stores record:
+  - `T0 = C0 + HC0`
+  - `T1 = C1 + HC1 + MC`
+4. Derived encryption key stays backend-side.
+
+Verification:
+1. Backend recomputes `HC0`, sends `C0 = T0 - HC0` to server.
+2. Server validates and returns `C1` (+ proof) on success.
+3. Backend recovers `MC = T1 - C1 - HC1` and derives encryption key.
+
+Rotation:
+- server issues update token (`delta = y_new - y_old`);
+- records are updated with server-side contribution without requiring plaintext passwords.
 
 ---
 
@@ -327,7 +361,8 @@ The filter chain is defined as JSON (passed programmatically or from a config fi
 | `crypto` | AesGcmCipher, Cipher trait | AES-256-GCM + HMAC-SHA256 + HKDF key derivation |
 | `store` | MemoryStore, RedbStore, Store trait | KV abstraction with transparent encryption |
 | `circuit_breaker` | CircuitBreaker | Per-upstream Closed/Open/HalfOpen state machine |
-| `filters/*` | 8 built-in filters | See [Built-in Filters](#built-in-filters) |
+| `phe` | PheContext, PheServer, PheClient, PheRecord | Password-hardened encryption protocol on P-256 |
+| `filters/*` | 9 built-in filters | See [Built-in Filters](#built-in-filters) |
 
 ---
 
@@ -347,6 +382,7 @@ The filter chain is defined as JSON (passed programmatically or from a config fi
 | `serde` + `serde_json` | Serialization (config parsing) |
 | `reqwest` | HTTP upstream client (rustls) |
 | `aes-gcm` + `hmac` + `sha2` + `hkdf` | Cryptography |
+| `p256` + `elliptic-curve` + `subtle` + `zeroize` | PHE primitives (curve math, proofs, constant-time ops, key zeroization) |
 | `redb` | Embedded ACID KV store (optional) |
 | `jsonwebtoken` | JWT validation |
 | `typemap_rev` | Typed heterogeneous metadata |

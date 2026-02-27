@@ -16,7 +16,8 @@
 //! - [`crypto`]  — AES-256-GCM encryption, HMAC-SHA256 key hashing, HKDF key derivation
 //! - [`store`]   — KV store abstraction: MemoryStore + RedbStore with encryption at rest
 //! - [`circuit_breaker`] — Per-upstream circuit breaker (Closed/Open/HalfOpen)
-//! - [`filters`] — Built-in filters: auth, rate_limit, cors, access_log, add_header, encrypt, kv, router
+//! - [`filters`] — Built-in filters: auth, rate_limit, cors, access_log, add_header, encrypt, kv, router, phe
+//! - [`phe`]     — Password-Hardened Encryption (P-256 + Schnorr proofs + HKDF)
 
 pub mod types;
 pub mod filter;
@@ -29,3 +30,4 @@ pub mod upstream;
 pub mod crypto;
 pub mod store;
 pub mod circuit_breaker;
+pub mod phe;
