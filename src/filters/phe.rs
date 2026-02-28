@@ -414,7 +414,7 @@ fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::builder::FilterFactory;
+    use crate::builder::{FilterFactory, ron_value};
     use crate::filter::{Effects, HttpClient, Metrics, RequestLogger, SharedState, SystemClock};
     use crate::types::BodyStream;
     use bytes::Bytes;
@@ -449,12 +449,12 @@ mod tests {
 
     #[test]
     fn factory_builds_with_defaults() {
-        assert!(PheFactory.build(&serde_json::json!({})).is_ok());
+        assert!(PheFactory.build(&ron_value("{}")).is_ok());
     }
 
     #[test]
     fn factory_builds_with_custom_prefix() {
-        let r = PheFactory.build(&serde_json::json!({"path_prefix": "/auth/phe"}));
+        let r = PheFactory.build(&ron_value(r#"{"path_prefix": "/auth/phe"}"#));
         assert!(r.is_ok());
     }
 
@@ -462,7 +462,7 @@ mod tests {
 
     #[tokio::test]
     async fn enroll_returns_record_but_not_key() {
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         let mut req = make_request(
@@ -501,7 +501,7 @@ mod tests {
 
     #[tokio::test]
     async fn enroll_stores_key_in_metadata() {
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         let mut req = make_request(
@@ -523,7 +523,7 @@ mod tests {
 
     #[tokio::test]
     async fn enroll_missing_password_returns_400() {
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         let mut req = make_request(Method::POST, "/phe/enroll", br#"{}"#);
@@ -537,7 +537,7 @@ mod tests {
 
     #[tokio::test]
     async fn enroll_invalid_json_returns_400() {
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         let mut req = make_request(Method::POST, "/phe/enroll", b"not json");
@@ -553,7 +553,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_correct_password_does_not_return_key() {
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         // Step 1: enroll
@@ -608,7 +608,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_wrong_password_returns_401() {
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         // Enroll
@@ -652,7 +652,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_missing_record_returns_400() {
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         let mut req = make_request(
@@ -669,7 +669,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_invalid_record_returns_400() {
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         let mut req = make_request(
@@ -688,7 +688,7 @@ mod tests {
 
     #[tokio::test]
     async fn non_phe_path_passes_through() {
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         let mut req = make_request(Method::GET, "/other/path", b"");
@@ -698,7 +698,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_phe_endpoint_returns_404() {
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         let mut req = make_request(Method::POST, "/phe/unknown", b"");
@@ -712,7 +712,7 @@ mod tests {
     #[tokio::test]
     async fn custom_prefix_works() {
         let filter = PheFactory
-            .build(&serde_json::json!({"path_prefix": "/auth/phe"}))
+            .build(&ron_value(r#"{"path_prefix": "/auth/phe"}"#))
             .unwrap();
         let effects = test_effects();
 
@@ -734,7 +734,7 @@ mod tests {
     async fn enroll_verify_key_matches_and_can_encrypt() {
         use crate::crypto::{AesGcmCipher, Cipher};
 
-        let filter = PheFactory.build(&serde_json::json!({})).unwrap();
+        let filter = PheFactory.build(&ron_value("{}")).unwrap();
         let effects = test_effects();
 
         // 1. Enroll

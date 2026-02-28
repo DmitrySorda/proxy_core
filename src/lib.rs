@@ -6,7 +6,7 @@
 //! - **Effects**: explicit injection, no hidden side effects
 //!
 //! ## Module map
-//! - [`types`]   — Request, Response, BodyStream, Metadata, JSON helpers (sonic-rs SIMD)
+//! - [`types`]   — Request, Response, BodyStream, Metadata, JSON runtime helpers (sonic-rs SIMD)
 //! - [`filter`]  — Filter trait, Verdict, Effects (DI container)
 //! - [`chain`]   — FilterChain executor + ActiveChain (ArcSwap hot reload)
 //! - [`builder`] — ChainBuilder, FilterFactory, FilterRegistry (control plane)

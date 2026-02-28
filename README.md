@@ -158,14 +158,14 @@ Recommended chain segment: `auth -> rbac -> access_log -> audit -> ...`
 
 Minimal config:
 
-```json
-{
-  "name": "audit",
-  "typed_config": {
-    "skip_paths": ["/health", "/ready"],
-    "include_claims": ["org_id", "branch_id", "role"]
-  }
-}
+```ron
+(
+    name: "audit",
+    typed_config: {
+        "skip_paths": ["/health", "/ready"],
+        "include_claims": ["org_id", "branch_id", "role"],
+    },
+)
 ```
 
 ### SSO/LDAP Bridge Filter (Iteration 3)
@@ -181,21 +181,21 @@ Recommended segment: `auth(optional jwt) -> sso_bridge -> ldap_sync(optional) ->
 
 Minimal config:
 
-```json
-{
-  "name": "sso_bridge",
-  "typed_config": {
-    "trusted_peer_ips": ["127.0.0.1"],
-    "require_trusted_peer": true,
-    "deny_untrusted_with_headers": true,
-    "identity_header": "x-auth-user",
-    "groups_header": "x-auth-groups",
-    "roles_header": "x-auth-roles",
-    "org_header": "x-org-id",
-    "branch_header": "x-branch-id",
-    "separator": ","
-  }
-}
+```ron
+(
+    name: "sso_bridge",
+    typed_config: {
+        "trusted_peer_ips": ["127.0.0.1"],
+        "require_trusted_peer": true,
+        "deny_untrusted_with_headers": true,
+        "identity_header": "x-auth-user",
+        "groups_header": "x-auth-groups",
+        "roles_header": "x-auth-roles",
+        "org_header": "x-org-id",
+        "branch_header": "x-branch-id",
+        "separator": ",",
+    },
+)
 ```
 
 ### LDAP Sync Filter (Iteration 4)
@@ -214,25 +214,25 @@ If `ldap_sync` is enabled, preferred IAM segment is:
 
 Minimal config:
 
-```json
-{
-  "name": "ldap_sync",
-  "typed_config": {
-    "cache_ttl_secs": 60,
-    "require_identity": true,
-    "directory": {
-      "alice": {
-        "groups": ["finance"],
-        "roles": ["accountant"],
-        "org_id": "org-1",
-        "branch_id": "b-1"
-      }
+```ron
+(
+    name: "ldap_sync",
+    typed_config: {
+        "cache_ttl_secs": 60,
+        "require_identity": true,
+        "directory": {
+            "alice": {
+                "groups": ["finance"],
+                "roles": ["accountant"],
+                "org_id": "org-1",
+                "branch_id": "b-1",
+            },
+        },
+        "group_role_map": {
+            "finance": ["report_viewer"],
+        },
     },
-    "group_role_map": {
-      "finance": ["report_viewer"]
-    }
-  }
-}
+)
 ```
 
 ### PHE Protocol Flow (Implemented)
@@ -348,24 +348,24 @@ req.body_action = BodyAction::Transform(Box::new(GzipCompress::new()));
 
 ### 4. Route Patterns with Path Parameters
 
-```json
-{
-  "routes": [
-    {
-      "match": { "pattern": "/users/:user_id/posts/:post_id" },
-      "methods": ["GET"],
-      "http": { "url": "http://api-backend:8081" }
-    },
-    {
-      "match": { "prefix": "/static/" },
-      "http": { "url": "http://cdn:9090" }
-    },
-    {
-      "match": { "exact": "/healthz" },
-      "http": { "url": "http://localhost:8081" }
-    }
-  ]
-}
+```ron
+(
+    routes: [
+        (
+            match: {"pattern": "/users/:user_id/posts/:post_id"},
+            methods: ["GET"],
+            http: {"url": "http://api-backend:8081"},
+        ),
+        (
+            match: {"prefix": "/static/"},
+            http: {"url": "http://cdn:9090"},
+        ),
+        (
+            match: {"exact": "/healthz"},
+            http: {"url": "http://localhost:8081"},
+        ),
+    ],
+)
 ```
 
 Parameters are injected into `req.metadata` as `PathParams` (`HashMap<String, String>`).
@@ -425,189 +425,189 @@ cargo test --features redb  # includes redb integration tests
 
 ## Configuration
 
-The filter chain is defined as JSON (passed programmatically or from a config file):
+The filter chain is defined in RON (Rust Object Notation) — passed programmatically or from a config file:
 
-```json
-{
-  "filters": [
-    {
-      "name": "rate_limit",
-      "typed_config": { "max_rps": 100 }
-    },
-    {
-      "name": "auth",
-      "typed_config": {
-        "strategy": "jwt",
-        "jwt": {
-          "secret": "your-256-bit-secret",
-          "algorithm": "HS256"
-        },
-        "skip_paths": ["/healthz", "/public"]
-      }
-    },
-    {
-      "name": "cors",
-      "typed_config": {
-        "allowed_origins": ["https://app.example.com"],
-        "allowed_methods": ["GET", "POST", "PUT", "DELETE"],
-        "allowed_headers": ["Content-Type", "Authorization"],
-        "max_age_secs": 86400
-      }
-    },
-    {
-      "name": "access_log",
-      "typed_config": { "level": "info" }
-    },
-    {
-      "name": "router",
-      "typed_config": {
-        "routes": [
-          {
-            "match": { "pattern": "/api/users/:id" },
-            "methods": ["GET", "PUT", "DELETE"],
-            "http": { "url": "http://users-service:8081" }
-          },
-          {
-            "match": { "prefix": "/" },
-            "http": { "url": "http://fallback:9090" }
-          }
-        ],
-        "circuit_breaker": {
-          "failure_threshold": 5,
-          "recovery_timeout_secs": 30
-        }
-      }
-    }
-  ]
-}
+```ron
+(
+    filters: [
+        (
+            name: "rate_limit",
+            typed_config: {"max_rps": 100},
+        ),
+        (
+            name: "auth",
+            typed_config: {
+                "strategy": "jwt",
+                "jwt": {
+                    "secret": "your-256-bit-secret",
+                    "algorithm": "HS256",
+                },
+                "skip_paths": ["/healthz", "/public"],
+            },
+        ),
+        (
+            name: "cors",
+            typed_config: {
+                "allowed_origins": ["https://app.example.com"],
+                "allowed_methods": ["GET", "POST", "PUT", "DELETE"],
+                "allowed_headers": ["Content-Type", "Authorization"],
+                "max_age_secs": 86400,
+            },
+        ),
+        (
+            name: "access_log",
+            typed_config: {"level": "info"},
+        ),
+        (
+            name: "router",
+            typed_config: {
+                "routes": [
+                    (
+                        match: {"pattern": "/api/users/:id"},
+                        methods: ["GET", "PUT", "DELETE"],
+                        http: {"url": "http://users-service:8081"},
+                    ),
+                    (
+                        match: {"prefix": "/"},
+                        http: {"url": "http://fallback:9090"},
+                    ),
+                ],
+                "circuit_breaker": {
+                    "failure_threshold": 5,
+                    "recovery_timeout_secs": 30,
+                },
+            },
+        ),
+    ],
+)
 ```
 
 ### Minimal production example: `auth -> sso_bridge -> ldap_sync -> rbac -> audit -> phe -> encrypt -> kv -> router`
 
-```json
-{
-  "filters": [
-    {
-      "name": "auth",
-      "typed_config": {
-        "strategy": "jwt",
-        "jwt": {
-          "secret": "change-me-256-bit-secret",
-          "algorithm": "HS256"
-        }
-      }
-    },
-    {
-      "name": "sso_bridge",
-      "typed_config": {
-        "trusted_peer_ips": ["127.0.0.1"],
-        "require_trusted_peer": true,
-        "deny_untrusted_with_headers": true,
-        "identity_header": "x-auth-user",
-        "groups_header": "x-auth-groups",
-        "roles_header": "x-auth-roles",
-        "org_header": "x-org-id",
-        "branch_header": "x-branch-id",
-        "separator": ","
-      }
-    },
-    {
-      "name": "ldap_sync",
-      "typed_config": {
-        "cache_ttl_secs": 60,
-        "require_identity": true,
-        "directory": {
-          "alice": {
-            "groups": ["finance"],
-            "roles": ["accountant"],
-            "org_id": "org-1",
-            "branch_id": "b-1"
-          }
-        },
-        "group_role_map": {
-          "finance": ["report_viewer"]
-        }
-      }
-    },
-    {
-      "name": "rbac",
-      "typed_config": {
-        "default_deny": true,
-        "deny_actions": ["doc:post"],
-        "roles": {
-          "accountant": ["doc:view", "doc:edit"],
-          "manager": ["doc:view", "doc:approve"]
-        },
-        "groups": {
-          "finance": ["accountant"]
-        },
-        "rules": [
-          {
-            "path_prefix": "/docs",
-            "methods": ["GET"],
-            "permissions": ["doc:view"],
-            "action": "doc:view"
-          },
-          {
-            "path_prefix": "/docs",
-            "methods": ["PUT"],
-            "permissions": ["doc:edit"],
-            "action": "doc:edit"
-          }
-        ],
-        "scope": {
-          "org_claim": "org_id",
-          "org_header": "x-org-id",
-          "branch_claim": "branch_id",
-          "branch_header": "x-branch-id"
-        }
-      }
-    },
-    {
-      "name": "audit",
-      "typed_config": {
-        "skip_paths": ["/health", "/ready"],
-        "include_claims": ["org_id", "branch_id", "role"]
-      }
-    },
-    {
-      "name": "phe",
-      "typed_config": {
-        "path_prefix": "/phe",
-        "server_key_env": "PHE_SERVER_KEY",
-        "client_key_env": "PHE_CLIENT_KEY"
-      }
-    },
-    {
-      "name": "encrypt",
-      "typed_config": {
-        "key_env": "PROXY_ENCRYPTION_KEY"
-      }
-    },
-    {
-      "name": "kv",
-      "typed_config": {
-        "path_prefix": "/kv",
-        "backend": "redb",
-        "db_path": "./proxy.redb",
-        "key_env": "PROXY_ENCRYPTION_KEY",
-        "encrypt_keys": true,
-        "encrypt_values": true
-      }
-    },
-    {
-      "name": "router",
-      "typed_config": {
-        "routes": [
-          {
-            "match": { "prefix": "/" },
-            "http": { "url": "http://127.0.0.1:9090", "timeout_ms": 5000 }
-          }
-        ]
-      }
-    }
-  ]
-}
+```ron
+(
+    filters: [
+        (
+            name: "auth",
+            typed_config: {
+                "strategy": "jwt",
+                "jwt": {
+                    "secret": "change-me-256-bit-secret",
+                    "algorithm": "HS256",
+                },
+            },
+        ),
+        (
+            name: "sso_bridge",
+            typed_config: {
+                "trusted_peer_ips": ["127.0.0.1"],
+                "require_trusted_peer": true,
+                "deny_untrusted_with_headers": true,
+                "identity_header": "x-auth-user",
+                "groups_header": "x-auth-groups",
+                "roles_header": "x-auth-roles",
+                "org_header": "x-org-id",
+                "branch_header": "x-branch-id",
+                "separator": ",",
+            },
+        ),
+        (
+            name: "ldap_sync",
+            typed_config: {
+                "cache_ttl_secs": 60,
+                "require_identity": true,
+                "directory": {
+                    "alice": {
+                        "groups": ["finance"],
+                        "roles": ["accountant"],
+                        "org_id": "org-1",
+                        "branch_id": "b-1",
+                    },
+                },
+                "group_role_map": {
+                    "finance": ["report_viewer"],
+                },
+            },
+        ),
+        (
+            name: "rbac",
+            typed_config: {
+                "default_deny": true,
+                "deny_actions": ["doc:post"],
+                "roles": {
+                    "accountant": ["doc:view", "doc:edit"],
+                    "manager": ["doc:view", "doc:approve"],
+                },
+                "groups": {
+                    "finance": ["accountant"],
+                },
+                "rules": [
+                    {
+                        "path_prefix": "/docs",
+                        "methods": ["GET"],
+                        "permissions": ["doc:view"],
+                        "action": "doc:view",
+                    },
+                    {
+                        "path_prefix": "/docs",
+                        "methods": ["PUT"],
+                        "permissions": ["doc:edit"],
+                        "action": "doc:edit",
+                    },
+                ],
+                "scope": {
+                    "org_claim": "org_id",
+                    "org_header": "x-org-id",
+                    "branch_claim": "branch_id",
+                    "branch_header": "x-branch-id",
+                },
+            },
+        ),
+        (
+            name: "audit",
+            typed_config: {
+                "skip_paths": ["/health", "/ready"],
+                "include_claims": ["org_id", "branch_id", "role"],
+            },
+        ),
+        (
+            name: "phe",
+            typed_config: {
+                "path_prefix": "/phe",
+                "server_key_env": "PHE_SERVER_KEY",
+                "client_key_env": "PHE_CLIENT_KEY",
+            },
+        ),
+        (
+            name: "encrypt",
+            typed_config: {
+                "key_env": "PROXY_ENCRYPTION_KEY",
+            },
+        ),
+        (
+            name: "kv",
+            typed_config: {
+                "path_prefix": "/kv",
+                "backend": "redb",
+                "db_path": "./proxy.redb",
+                "key_env": "PROXY_ENCRYPTION_KEY",
+                "encrypt_keys": true,
+                "encrypt_values": true,
+            },
+        ),
+        (
+            name: "router",
+            typed_config: {
+                "routes": [
+                    {
+                        "match": {"prefix": "/"},
+                        "http": {"url": "http://127.0.0.1:9090", "timeout_ms": 5000},
+                    },
+                ],
+            },
+        ),
+    ],
+)
 ```
 
 Required environment variables for this example:
@@ -649,7 +649,7 @@ Required environment variables for this example:
 | `tokio` | Async runtime |
 | `http` + `bytes` | HTTP types |
 | `sonic-rs` | SIMD-accelerated JSON (hot path) |
-| `serde` + `serde_json` | Serialization (config parsing) |
+| `serde` + `serde_json` + `ron` | Serialization (RON config parsing, JSON runtime interchange) |
 | `reqwest` | HTTP upstream client (rustls) |
 | `aes-gcm` + `hmac` + `sha2` + `hkdf` | Cryptography |
 | `p256` + `elliptic-curve` + `subtle` + `zeroize` | PHE primitives (curve math, proofs, constant-time ops, key zeroization) |

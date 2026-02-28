@@ -25,7 +25,7 @@
 //! Graceful shutdown:
 //!   Press Ctrl+C — server drains in-flight requests, then exits cleanly.
 
-use proxy_core::builder::{ChainBuilder, ChainConfig, FilterRegistry};
+use proxy_core::builder::{ChainBuilder, ChainConfig, FilterRegistry, parse_ron};
 use proxy_core::chain::new_active_chain;
 use proxy_core::filters::access_log::AccessLogFactory;
 use proxy_core::filters::add_header::AddHeaderFactory;
@@ -89,52 +89,53 @@ async fn main() {
     //
     // - /kv/* requests:  handled by kv filter (encrypted at-rest in memory store)
     // - everything else: forwarded to HTTP upstream on :9090
-    let config: ChainConfig = serde_json::from_value(serde_json::json!({
-        "filters": [
-            {
-                "name": "rate_limit",
-                "typed_config": { "max_rps": 10 }
-            },
-            {
-                "name": "add_header",
-                "typed_config": {
-                    "header_name": "x-proxy",
-                    "header_value": "proxy_core/0.1"
-                }
-            },
-            {
-                "name": "kv",
-                "typed_config": {
-                    "path_prefix": "/kv",
-                    "backend": "memory",
-                    "key_env": "PROXY_ENCRYPTION_KEY",
-                    "encrypt_keys": true,
-                    "encrypt_values": true
-                }
-            },
-            {
-                "name": "router",
-                "typed_config": {
-                    "routes": [
-                        {
-                            "match": { "prefix": "/" },
-                            "http": {
-                                "url": "http://127.0.0.1:9090",
-                                "timeout_ms": 5000
-                            }
-                        }
-                    ],
-                    "circuit_breaker": {
-                        "failure_threshold": 5,
-                        "recovery_timeout_secs": 30,
-                        "half_open_max_requests": 3,
-                        "success_threshold": 2
-                    }
-                }
-            }
-        ]
-    }))
-    .expect("invalid config");
+    let config: ChainConfig = parse_ron(r#"
+        (
+            filters: [
+                (
+                    name: "rate_limit",
+                    typed_config: {"max_rps": 10},
+                ),
+                (
+                    name: "add_header",
+                    typed_config: {
+                        "header_name": "x-proxy",
+                        "header_value": "proxy_core/0.1",
+                    },
+                ),
+                (
+                    name: "kv",
+                    typed_config: {
+                        "path_prefix": "/kv",
+                        "backend": "memory",
+                        "key_env": "PROXY_ENCRYPTION_KEY",
+                        "encrypt_keys": true,
+                        "encrypt_values": true,
+                    },
+                ),
+                (
+                    name: "router",
+                    typed_config: {
+                        "routes": [
+                            {
+                                "match": {"prefix": "/"},
+                                "http": {
+                                    "url": "http://127.0.0.1:9090",
+                                    "timeout_ms": 5000,
+                                },
+                            },
+                        ],
+                        "circuit_breaker": {
+                            "failure_threshold": 5,
+                            "recovery_timeout_secs": 30,
+                            "half_open_max_requests": 3,
+                            "success_threshold": 2,
+                        },
+                    },
+                ),
+            ],
+        )
+    "#).expect("invalid config");
 
     // 3. Build chain (incremental builder)
     let mut builder = ChainBuilder::new(Arc::clone(&registry));

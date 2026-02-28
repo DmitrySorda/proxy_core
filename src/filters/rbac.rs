@@ -352,6 +352,7 @@ impl FilterFactory for RbacFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::filter::{HttpClient, Metrics, RequestLogger, SharedState, SystemClock};
     use http::{Method, Uri};
     use std::net::SocketAddr;
@@ -377,7 +378,7 @@ mod tests {
 
     fn base_filter() -> Arc<dyn Filter> {
         RbacFactory
-            .build(&serde_json::json!({
+            .build(&ron_value(r#"{
                 "default_deny": true,
                 "deny_actions": ["doc:post"],
                 "roles": {
@@ -407,7 +408,7 @@ mod tests {
                         "action": "doc:post"
                     }
                 ]
-            }))
+            }"#))
             .unwrap()
     }
 

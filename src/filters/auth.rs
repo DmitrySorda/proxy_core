@@ -617,6 +617,7 @@ fn build_basic_strategy(config: &serde_json::Value) -> Result<AuthStrategy, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::filter::*;
     use http::{Method, Uri};
     use std::net::SocketAddr;
@@ -1135,10 +1136,10 @@ mod tests {
     #[test]
     fn factory_builds_jwt() {
         let factory = AuthFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "strategy": "jwt",
-            "jwt": { "secret": "my-secret" }
-        });
+            "jwt": {"secret": "my-secret"}
+        }"#);
         let filter = factory.build(&config).unwrap();
         assert_eq!(filter.name(), "auth");
     }
@@ -1146,13 +1147,13 @@ mod tests {
     #[test]
     fn factory_builds_api_key() {
         let factory = AuthFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "strategy": "api_key",
             "api_key": {
                 "header": "X-Custom-Key",
-                "keys": { "key1": "svc1" }
+                "keys": {"key1": "svc1"}
             }
-        });
+        }"#);
         let filter = factory.build(&config).unwrap();
         assert_eq!(filter.name(), "auth");
     }
@@ -1160,13 +1161,13 @@ mod tests {
     #[test]
     fn factory_builds_basic() {
         let factory = AuthFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "strategy": "basic",
             "basic": {
                 "realm": "test",
-                "users": { "admin": "pass" }
+                "users": {"admin": "pass"}
             }
-        });
+        }"#);
         let filter = factory.build(&config).unwrap();
         assert_eq!(filter.name(), "auth");
     }
@@ -1174,55 +1175,55 @@ mod tests {
     #[test]
     fn factory_rejects_missing_strategy() {
         let factory = AuthFactory;
-        let config = serde_json::json!({});
+        let config = ron_value("{}");
         assert!(factory.build(&config).is_err());
     }
 
     #[test]
     fn factory_rejects_unknown_strategy() {
         let factory = AuthFactory;
-        let config = serde_json::json!({"strategy": "oauth2"});
+        let config = ron_value(r#"{"strategy": "oauth2"}"#);
         assert!(factory.build(&config).is_err());
     }
 
     #[test]
     fn factory_rejects_jwt_without_secret() {
         let factory = AuthFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "strategy": "jwt",
             "jwt": {}
-        });
+        }"#);
         assert!(factory.build(&config).is_err());
     }
 
     #[test]
     fn factory_rejects_api_key_with_empty_keys() {
         let factory = AuthFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "strategy": "api_key",
-            "api_key": { "keys": {} }
-        });
+            "api_key": {"keys": {}}
+        }"#);
         assert!(factory.build(&config).is_err());
     }
 
     #[test]
     fn factory_rejects_basic_with_empty_users() {
         let factory = AuthFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "strategy": "basic",
-            "basic": { "users": {} }
-        });
+            "basic": {"users": {}}
+        }"#);
         assert!(factory.build(&config).is_err());
     }
 
     #[test]
     fn factory_jwt_with_skip_paths() {
         let factory = AuthFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "strategy": "jwt",
-            "jwt": { "secret": "my-secret" },
+            "jwt": {"secret": "my-secret"},
             "skip_paths": ["/health", "/ready"]
-        });
+        }"#);
         let filter = factory.build(&config);
         assert!(filter.is_ok());
     }
@@ -1230,10 +1231,10 @@ mod tests {
     #[test]
     fn factory_rejects_unsupported_algorithm() {
         let factory = AuthFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "strategy": "jwt",
-            "jwt": { "secret": "key", "algorithm": "RS256" }
-        });
+            "jwt": {"secret": "key", "algorithm": "RS256"}
+        }"#);
         assert!(factory.build(&config).is_err());
     }
 
@@ -1241,10 +1242,10 @@ mod tests {
     fn factory_jwt_secret_from_env() {
         std::env::set_var("TEST_JWT_SECRET_AUTH", "env-secret-value");
         let factory = AuthFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "strategy": "jwt",
-            "jwt": { "secret_env": "TEST_JWT_SECRET_AUTH" }
-        });
+            "jwt": {"secret_env": "TEST_JWT_SECRET_AUTH"}
+        }"#);
         let filter = factory.build(&config);
         assert!(filter.is_ok());
         std::env::remove_var("TEST_JWT_SECRET_AUTH");

@@ -191,6 +191,7 @@ impl FilterFactory for CorsFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::filter::{HttpClient, Metrics, RequestLogger, SharedState};
     use http::{Method, Uri};
 
@@ -221,11 +222,11 @@ mod tests {
 
     #[tokio::test]
     async fn preflight_returns_204_with_cors_headers() {
-        let filter = build_cors(serde_json::json!({
+        let filter = build_cors(ron_value(r#"{
             "allowed_origins": ["https://example.com"],
             "allowed_headers": ["Content-Type", "Authorization"],
             "max_age_secs": 3600
-        }));
+        }"#));
 
         let fx = test_effects();
         let mut req = make_request(Method::OPTIONS, Some("https://example.com"));
@@ -260,9 +261,7 @@ mod tests {
 
     #[tokio::test]
     async fn preflight_disallowed_origin_passes_through() {
-        let filter = build_cors(serde_json::json!({
-            "allowed_origins": ["https://example.com"]
-        }));
+        let filter = build_cors(ron_value(r#"{"allowed_origins": ["https://example.com"]}"#));
 
         let fx = test_effects();
         let mut req = make_request(Method::OPTIONS, Some("https://evil.com"));
@@ -272,9 +271,7 @@ mod tests {
 
     #[tokio::test]
     async fn non_options_passes_through() {
-        let filter = build_cors(serde_json::json!({
-            "allowed_origins": ["https://example.com"]
-        }));
+        let filter = build_cors(ron_value(r#"{"allowed_origins": ["https://example.com"]}"#));
 
         let fx = test_effects();
         let mut req = make_request(Method::GET, Some("https://example.com"));
@@ -284,9 +281,7 @@ mod tests {
 
     #[tokio::test]
     async fn options_without_origin_passes_through() {
-        let filter = build_cors(serde_json::json!({
-            "allowed_origins": ["https://example.com"]
-        }));
+        let filter = build_cors(ron_value(r#"{"allowed_origins": ["https://example.com"]}"#));
 
         let fx = test_effects();
         let mut req = make_request(Method::OPTIONS, None);
@@ -298,9 +293,7 @@ mod tests {
 
     #[tokio::test]
     async fn wildcard_origin_allows_any() {
-        let filter = build_cors(serde_json::json!({
-            "allowed_origins": ["*"]
-        }));
+        let filter = build_cors(ron_value(r#"{"allowed_origins": ["*"]}"#));
 
         let fx = test_effects();
         let mut req = make_request(Method::OPTIONS, Some("https://anything.com"));
@@ -320,10 +313,10 @@ mod tests {
 
     #[tokio::test]
     async fn credentials_echoes_specific_origin_not_wildcard() {
-        let filter = build_cors(serde_json::json!({
+        let filter = build_cors(ron_value(r#"{
             "allowed_origins": ["*"],
             "allow_credentials": true
-        }));
+        }"#));
 
         let fx = test_effects();
         let mut req = make_request(Method::OPTIONS, Some("https://app.example.com"));
@@ -350,9 +343,7 @@ mod tests {
 
     #[tokio::test]
     async fn on_response_adds_cors_header() {
-        let filter = build_cors(serde_json::json!({
-            "allowed_origins": ["https://example.com"]
-        }));
+        let filter = build_cors(ron_value(r#"{"allowed_origins": ["https://example.com"]}"#));
 
         let fx = test_effects();
         let req = make_request(Method::GET, Some("https://example.com"));
@@ -368,9 +359,7 @@ mod tests {
 
     #[tokio::test]
     async fn on_response_no_origin_no_headers() {
-        let filter = build_cors(serde_json::json!({
-            "allowed_origins": ["https://example.com"]
-        }));
+        let filter = build_cors(ron_value(r#"{"allowed_origins": ["https://example.com"]}"#));
 
         let fx = test_effects();
         let req = make_request(Method::GET, None);
@@ -383,9 +372,7 @@ mod tests {
 
     #[tokio::test]
     async fn on_response_disallowed_origin_no_headers() {
-        let filter = build_cors(serde_json::json!({
-            "allowed_origins": ["https://example.com"]
-        }));
+        let filter = build_cors(ron_value(r#"{"allowed_origins": ["https://example.com"]}"#));
 
         let fx = test_effects();
         let req = make_request(Method::GET, Some("https://evil.com"));
@@ -400,7 +387,7 @@ mod tests {
 
     #[test]
     fn factory_builds_with_defaults() {
-        let filter = CorsFactory.build(&serde_json::json!({}));
+        let filter = CorsFactory.build(&ron_value("{}"));
         assert!(filter.is_ok());
         assert_eq!(filter.unwrap().name(), "cors");
     }
@@ -408,7 +395,7 @@ mod tests {
     #[test]
     fn factory_rejects_invalid_config() {
         // Config type errors should produce Err
-        let result = CorsFactory.build(&serde_json::json!({ "max_age_secs": "not_a_number" }));
+        let result = CorsFactory.build(&ron_value(r#"{"max_age_secs": "not_a_number"}"#));
         assert!(result.is_err());
     }
 

@@ -77,6 +77,7 @@ impl FilterFactory for AddHeaderFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::filter::*;
     use http::{Method, Uri};
     use std::net::SocketAddr;
@@ -156,10 +157,7 @@ mod tests {
     #[tokio::test]
     async fn factory_builds_with_config() {
         let factory = AddHeaderFactory;
-        let config = serde_json::json!({
-            "header_name": "x-custom",
-            "header_value": "custom-val"
-        });
+        let config = ron_value(r#"{"header_name": "x-custom", "header_value": "custom-val"}"#);
         let filter = factory.build(&config).unwrap();
 
         let fx = test_effects();
@@ -174,7 +172,7 @@ mod tests {
     #[tokio::test]
     async fn factory_uses_defaults_when_config_empty() {
         let factory = AddHeaderFactory;
-        let config = serde_json::json!({});
+        let config = ron_value("{}");
         let filter = factory.build(&config).unwrap();
 
         let fx = test_effects();

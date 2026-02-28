@@ -455,6 +455,7 @@ impl FilterFactory for KvFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::crypto::AesGcmCipher;
     use crate::filter::*;
     use http::{Method, Uri};
@@ -709,11 +710,11 @@ mod tests {
     #[tokio::test]
     async fn factory_memory_no_encryption() {
         let factory = KvFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "backend": "memory",
             "encrypt_values": false,
             "encrypt_keys": false
-        });
+        }"#);
         let filter = factory.build(&config);
         assert!(filter.is_ok());
     }
@@ -724,12 +725,12 @@ mod tests {
         std::env::set_var("TEST_KV_KEY", &key);
 
         let factory = KvFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "backend": "memory",
             "key_env": "TEST_KV_KEY",
             "encrypt_keys": true,
             "encrypt_values": true
-        });
+        }"#);
         let filter = factory.build(&config);
         assert!(filter.is_ok());
 
@@ -739,10 +740,10 @@ mod tests {
     #[tokio::test]
     async fn factory_rejects_encryption_without_key() {
         let factory = KvFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "backend": "memory",
             "encrypt_values": true
-        });
+        }"#);
         let result = factory.build(&config);
         assert!(result.is_err());
     }
@@ -751,11 +752,11 @@ mod tests {
     #[tokio::test]
     async fn factory_rejects_redb_without_feature() {
         let factory = KvFactory;
-        let config = serde_json::json!({
+        let config = ron_value(r#"{
             "backend": "redb",
             "encrypt_values": false,
             "encrypt_keys": false
-        });
+        }"#);
         let result = factory.build(&config);
         match result {
             Err(e) => assert!(e.contains("not compiled"), "unexpected error: {e}"),

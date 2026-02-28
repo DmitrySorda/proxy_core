@@ -262,6 +262,7 @@ impl FilterFactory for SsoBridgeFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::filter::{HttpClient, Metrics, RequestLogger, SharedState, SystemClock};
     use http::{Method, Uri};
     use std::net::SocketAddr;
@@ -290,10 +291,10 @@ mod tests {
 
     #[tokio::test]
     async fn injects_identity_and_claims_from_headers() {
-        let filter = filter(serde_json::json!({
+        let filter = filter(ron_value(r#"{
             "trusted_peer_ips": ["127.0.0.1"],
             "static_claims": {"tenant_type": "enterprise"}
-        }));
+        }"#));
 
         let fx = effects();
         let mut req = req("/api/data", "127.0.0.1:1234");
@@ -321,11 +322,11 @@ mod tests {
 
     #[tokio::test]
     async fn untrusted_peer_with_headers_is_denied() {
-        let filter = filter(serde_json::json!({
+        let filter = filter(ron_value(r#"{
             "trusted_peer_ips": ["127.0.0.1"],
             "require_trusted_peer": true,
             "deny_untrusted_with_headers": true
-        }));
+        }"#));
 
         let fx = effects();
         let mut req = req("/api/data", "10.0.0.7:1234");
@@ -340,10 +341,10 @@ mod tests {
 
     #[tokio::test]
     async fn preserves_existing_identity_when_not_overwrite() {
-        let filter = filter(serde_json::json!({
+        let filter = filter(ron_value(r#"{
             "trusted_peer_ips": ["127.0.0.1"],
             "overwrite_existing": false
-        }));
+        }"#));
 
         let fx = effects();
         let mut req = req("/api/data", "127.0.0.1:1234");
@@ -359,10 +360,10 @@ mod tests {
 
     #[tokio::test]
     async fn overwrite_existing_identity_when_enabled() {
-        let filter = filter(serde_json::json!({
+        let filter = filter(ron_value(r#"{
             "trusted_peer_ips": ["127.0.0.1"],
             "overwrite_existing": true
-        }));
+        }"#));
 
         let fx = effects();
         let mut req = req("/api/data", "127.0.0.1:1234");

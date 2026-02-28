@@ -104,6 +104,7 @@ impl FilterFactory for RateLimitFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::filter::*;
     use http::{Method, Uri};
     use std::net::SocketAddr;
@@ -258,7 +259,7 @@ mod tests {
     #[tokio::test]
     async fn factory_parses_config() {
         let factory = RateLimitFactory;
-        let config = serde_json::json!({"max_rps": 50});
+        let config = ron_value(r#"{"max_rps": 50}"#);
         let filter = factory.build(&config).unwrap();
         assert_eq!(filter.name(), "rate_limit");
     }
@@ -266,7 +267,7 @@ mod tests {
     #[tokio::test]
     async fn factory_uses_default_when_config_empty() {
         let factory = RateLimitFactory;
-        let config = serde_json::json!({});
+        let config = ron_value("{}");
         // Should not error — defaults to 100 rps
         let filter = factory.build(&config);
         assert!(filter.is_ok());

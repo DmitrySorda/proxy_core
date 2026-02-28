@@ -272,6 +272,7 @@ impl FilterFactory for EncryptFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::crypto::AesGcmCipher;
     use crate::filter::*;
     use http::{Method, Uri};
@@ -454,9 +455,7 @@ mod tests {
         std::env::set_var("TEST_ENCRYPT_KEY", &key_hex);
 
         let factory = EncryptFactory;
-        let config = serde_json::json!({
-            "key_env": "TEST_ENCRYPT_KEY"
-        });
+        let config = ron_value(r#"{"key_env": "TEST_ENCRYPT_KEY"}"#);
         let filter = factory.build(&config);
         assert!(filter.is_ok());
 
@@ -466,7 +465,7 @@ mod tests {
     #[test]
     fn factory_rejects_missing_key() {
         let factory = EncryptFactory;
-        let config = serde_json::json!({});
+        let config = ron_value("{}");
         assert!(factory.build(&config).is_err());
     }
 }

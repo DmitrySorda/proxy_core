@@ -258,6 +258,7 @@ impl FilterFactory for LdapSyncFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::filter::{Clock, HttpClient, Metrics, RequestLogger, SharedState};
     use crate::filter::SystemClock;
     use http::{Method, Uri};
@@ -321,7 +322,7 @@ mod tests {
 
     #[tokio::test]
     async fn enriches_claims_from_directory() {
-        let filter = filter(serde_json::json!({
+        let filter = filter(ron_value(r#"{
             "directory": {
                 "alice": {
                     "groups": ["finance"],
@@ -333,7 +334,7 @@ mod tests {
             "group_role_map": {
                 "finance": ["report_viewer"]
             }
-        }));
+        }"#));
 
         let fx = effects();
         let mut req = req("/api");
@@ -352,10 +353,10 @@ mod tests {
 
     #[tokio::test]
     async fn denies_when_identity_missing_and_required() {
-        let filter = filter(serde_json::json!({
+        let filter = filter(ron_value(r#"{
             "require_identity": true,
             "directory": {}
-        }));
+        }"#));
 
         let fx = effects();
         let mut req = req("/api");
@@ -369,12 +370,12 @@ mod tests {
 
     #[tokio::test]
     async fn cache_hit_works() {
-        let filter = filter(serde_json::json!({
+        let filter = filter(ron_value(r#"{
             "cache_ttl_secs": 60,
             "directory": {
                 "alice": {"groups": ["finance"], "roles": ["accountant"]}
             }
-        }));
+        }"#));
 
         let fx = effects();
         let mut req1 = req("/api");
@@ -390,12 +391,12 @@ mod tests {
 
     #[tokio::test]
     async fn cache_expires() {
-        let filter = filter(serde_json::json!({
+        let filter = filter(ron_value(r#"{
             "cache_ttl_secs": 1,
             "directory": {
                 "alice": {"groups": ["finance"], "roles": ["accountant"]}
             }
-        }));
+        }"#));
 
         let clock = Arc::new(SteppingClock::new(Duration::from_secs(2)));
         let fx = effects_with_clock(clock);

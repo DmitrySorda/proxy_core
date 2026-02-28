@@ -201,6 +201,7 @@ impl FilterFactory for AuditFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::filter::{HttpClient, Metrics, RequestLogger, SharedState, SystemClock};
     use http::{Method, StatusCode, Uri};
 
@@ -229,7 +230,7 @@ mod tests {
     #[tokio::test]
     async fn writes_audit_hash_to_response_metadata() {
         let fx = effects();
-        let filter = filter(serde_json::json!({"include_claims": ["org_id"]}));
+        let filter = filter(ron_value(r#"{"include_claims": ["org_id"]}"#));
 
         let mut request = req("/api/doc");
         request.metadata.insert::<AuthIdentity>("alice".to_string());
@@ -251,7 +252,7 @@ mod tests {
     #[tokio::test]
     async fn hash_chain_changes_between_events() {
         let fx = effects();
-        let filter = filter(serde_json::json!({}));
+        let filter = filter(ron_value("{}"));
 
         let mut req1 = req("/api/a");
         req1.metadata.insert::<AuthIdentity>("alice".to_string());
@@ -275,7 +276,7 @@ mod tests {
     #[tokio::test]
     async fn skip_path_does_not_emit_audit_event() {
         let fx = effects();
-        let filter = filter(serde_json::json!({"skip_paths": ["/health"]}));
+        let filter = filter(ron_value(r#"{"skip_paths": ["/health"]}"#));
 
         let mut request = req("/health");
         assert!(matches!(filter.on_request(&mut request, &fx).await, Verdict::Continue));

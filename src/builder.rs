@@ -1,7 +1,7 @@
 //! Control plane: ChainBuilder, FilterFactory, FilterRegistry.
 //!
 //! This is the "Build Systems à la Carte" part:
-//! - "Source" = configuration (JSON)
+//! - "Source" = configuration (RON — Rust Object Notation)
 //! - "Artifact" = FilterChain
 //! - "Rebuilder" = needs_rebuild() method on factories
 //! - Incremental: only rebuilds filters whose config changed
@@ -15,17 +15,26 @@ use std::sync::Arc;
 // ─── Config types ────────────────────────────────────────────────────
 
 /// Configuration for a single filter in the chain.
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FilterConfig {
     /// Filter name (must match a registered factory).
     pub name: String,
-    /// Filter-specific configuration (opaque JSON).
+    /// Filter-specific configuration (opaque RON value, serde-bridged).
     #[serde(default)]
     pub typed_config: serde_json::Value,
 }
 
 /// Configuration for the entire filter chain.
-#[derive(Debug, Clone, serde::Deserialize)]
+///
+/// Parsed from RON format:
+/// ```ron
+/// (
+///     filters: [
+///         (name: "rate_limit", typed_config: {"max_rps": 10}),
+///     ],
+/// )
+/// ```
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChainConfig {
     pub filters: Vec<FilterConfig>,
 }
@@ -70,7 +79,7 @@ pub trait FilterFactory: Send + Sync {
     /// Filter type name (e.g., "rate_limit", "jwt_auth").
     fn name(&self) -> &str;
 
-    /// Build a filter instance from JSON config.
+    /// Build a filter instance from config value.
     fn build(&self, config: &serde_json::Value) -> Result<Arc<dyn Filter>, String>;
 
     /// Should the filter be rebuilt given old and new configs?
@@ -158,7 +167,7 @@ impl ChainBuilder {
                 .get(&fc.name)
                 .ok_or_else(|| ConfigError::UnknownFilter(fc.name.clone()))?;
 
-            let config_hash = hash_json(&fc.typed_config);
+            let config_hash = hash_config(&fc.typed_config);
             let cache_key = (idx, fc.name.clone());
 
             let filter = match self.cache.get(&cache_key) {
@@ -205,12 +214,38 @@ impl ChainBuilder {
     }
 }
 
-/// Hash JSON value for cache keying (deterministic, fast xxHash64).
-fn hash_json(value: &serde_json::Value) -> u64 {
+/// Hash config value for cache keying (deterministic, fast xxHash64).
+fn hash_config(value: &serde_json::Value) -> u64 {
     let serialized = value.to_string();
     let mut hasher = twox_hash::XxHash64::default();
     serialized.hash(&mut hasher);
     hasher.finish()
+}
+
+// ─── RON helpers ─────────────────────────────────────────────────────
+
+/// Parse a RON string into any serde-deserializable type.
+///
+/// Primary entry point for loading configuration files.
+/// RON values are bridged to `serde_json::Value` through serde,
+/// so all existing filter factories work unchanged.
+///
+/// ```rust,ignore
+/// let config: ChainConfig = parse_ron(r#"(
+///     filters: [
+///         (name: "rate_limit", typed_config: {"max_rps": 10}),
+///     ],
+/// )"#).unwrap();
+/// ```
+pub fn parse_ron<T: serde::de::DeserializeOwned>(ron_str: &str) -> Result<T, String> {
+    ron::from_str(ron_str).map_err(|e| format!("RON parse error: {e}"))
+}
+
+/// Convenience: parse a RON string into `serde_json::Value`.
+///
+/// Useful in filter factories and tests for constructing typed_config.
+pub fn ron_value(ron_str: &str) -> serde_json::Value {
+    parse_ron(ron_str).unwrap_or_else(|e| panic!("invalid RON: {e}\ninput: {ron_str}"))
 }
 
 // ─── Hot Reload ──────────────────────────────────────────────────────
@@ -316,7 +351,7 @@ mod tests {
         let config = ChainConfig {
             filters: vec![FilterConfig {
                 name: "passthrough".into(),
-                typed_config: serde_json::json!({}),
+                typed_config: ron_value("{}"),
             }],
         };
 
@@ -332,9 +367,9 @@ mod tests {
 
         let config = ChainConfig {
             filters: vec![
-                FilterConfig { name: "passthrough".into(), typed_config: serde_json::json!({}) },
-                FilterConfig { name: "passthrough".into(), typed_config: serde_json::json!({"x": 1}) },
-                FilterConfig { name: "passthrough".into(), typed_config: serde_json::json!({"x": 2}) },
+                FilterConfig { name: "passthrough".into(), typed_config: ron_value("{}") },
+                FilterConfig { name: "passthrough".into(), typed_config: ron_value(r#"{"x": 1}"#) },
+                FilterConfig { name: "passthrough".into(), typed_config: ron_value(r#"{"x": 2}"#) },
             ],
         };
 
@@ -364,7 +399,7 @@ mod tests {
         let config = ChainConfig {
             filters: vec![FilterConfig {
                 name: "counting".into(),
-                typed_config: serde_json::json!({"key": "value"}),
+                typed_config: ron_value(r#"{"key": "value"}"#),
             }],
         };
 
@@ -387,13 +422,13 @@ mod tests {
         let config1 = ChainConfig {
             filters: vec![FilterConfig {
                 name: "counting".into(),
-                typed_config: serde_json::json!({"version": 1}),
+                typed_config: ron_value(r#"{"version": 1}"#),
             }],
         };
         let config2 = ChainConfig {
             filters: vec![FilterConfig {
                 name: "counting".into(),
-                typed_config: serde_json::json!({"version": 2}),
+                typed_config: ron_value(r#"{"version": 2}"#),
             }],
         };
 
@@ -415,7 +450,7 @@ mod tests {
         let config = ChainConfig {
             filters: vec![FilterConfig {
                 name: "nonexistent".into(),
-                typed_config: serde_json::json!({}),
+                typed_config: ron_value("{}"),
             }],
         };
 
@@ -436,7 +471,7 @@ mod tests {
         let config = ChainConfig {
             filters: vec![FilterConfig {
                 name: "failing".into(),
-                typed_config: serde_json::json!({}),
+                typed_config: ron_value("{}"),
             }],
         };
 
@@ -461,18 +496,40 @@ mod tests {
         assert!(names.contains(&"passthrough"));
     }
 
-    // ── hash_json determinism ───────────────────────────────────
+    // ── hash_config determinism ──────────────────────────────────
 
     #[test]
-    fn hash_json_same_input_same_output() {
-        let v = serde_json::json!({"a": 1, "b": [2, 3]});
-        assert_eq!(hash_json(&v), hash_json(&v));
+    fn hash_config_same_input_same_output() {
+        let v = ron_value(r#"{"a": 1, "b": [2, 3]}"#);
+        assert_eq!(hash_config(&v), hash_config(&v));
     }
 
     #[test]
-    fn hash_json_different_input_different_output() {
-        let a = serde_json::json!({"a": 1});
-        let b = serde_json::json!({"a": 2});
-        assert_ne!(hash_json(&a), hash_json(&b));
+    fn hash_config_different_input_different_output() {
+        let a = ron_value(r#"{"a": 1}"#);
+        let b = ron_value(r#"{"a": 2}"#);
+        assert_ne!(hash_config(&a), hash_config(&b));
+    }
+
+    // ── RON parsing ─────────────────────────────────────────────
+
+    #[test]
+    fn parse_ron_chain_config() {
+        let config: ChainConfig = parse_ron(r#"
+            (
+                filters: [
+                    (name: "passthrough", typed_config: {"x": 1}),
+                ],
+            )
+        "#).unwrap();
+        assert_eq!(config.filters.len(), 1);
+        assert_eq!(config.filters[0].name, "passthrough");
+    }
+
+    #[test]
+    fn ron_value_produces_valid_serde_value() {
+        let v = ron_value(r#"{"max_rps": 50}"#);
+        assert!(v.is_object(), "ron map should produce serde_json::Value::Object, got: {v:?}");
+        assert_eq!(v["max_rps"], 50);
     }
 }

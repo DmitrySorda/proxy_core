@@ -138,6 +138,7 @@ impl FilterFactory for AccessLogFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::ron_value;
     use crate::filter::{Clock, HttpClient, Metrics, RequestLogger, SharedState};
     use http::{Method, StatusCode, Uri};
 
@@ -183,7 +184,7 @@ mod tests {
 
     #[tokio::test]
     async fn on_request_stores_start_time() {
-        let filter = build_filter(serde_json::json!({}));
+        let filter = build_filter(ron_value("{}"));
         let fx = test_effects();
         let addr = "10.0.0.1:1234".parse().unwrap();
         let mut req = Request::new(Method::GET, Uri::from_static("/api"), addr);
@@ -195,7 +196,7 @@ mod tests {
 
     #[tokio::test]
     async fn on_response_returns_continue_and_increments_counter() {
-        let filter = build_filter(serde_json::json!({}));
+        let filter = build_filter(ron_value("{}"));
         let fx = test_effects();
         let addr = "10.0.0.1:1234".parse().unwrap();
         let mut req = Request::new(Method::GET, Uri::from_static("/api/test"), addr);
@@ -212,7 +213,7 @@ mod tests {
     #[tokio::test]
     async fn on_response_works_without_start_time() {
         // Edge case: on_response called without prior on_request
-        let filter = build_filter(serde_json::json!({}));
+        let filter = build_filter(ron_value("{}"));
         let fx = test_effects();
         let addr = "10.0.0.1:1234".parse().unwrap();
         let req = Request::new(Method::POST, Uri::from_static("/submit"), addr);
@@ -224,7 +225,7 @@ mod tests {
 
     #[tokio::test]
     async fn stepping_clock_measures_latency() {
-        let filter = build_filter(serde_json::json!({}));
+        let filter = build_filter(ron_value("{}"));
         let clock = Arc::new(SteppingClock::new(std::time::Duration::from_millis(50)));
         let fx = Effects {
             metrics: Arc::new(Metrics::new()),
@@ -249,19 +250,19 @@ mod tests {
 
     #[test]
     fn factory_defaults_to_info() {
-        let filter = build_filter(serde_json::json!({}));
+        let filter = build_filter(ron_value("{}"));
         assert_eq!(filter.name(), "access_log");
     }
 
     #[test]
     fn factory_accepts_debug_level() {
-        let filter = build_filter(serde_json::json!({ "level": "debug" }));
+        let filter = build_filter(ron_value(r#"{"level": "debug"}"#));
         assert_eq!(filter.name(), "access_log");
     }
 
     #[test]
     fn factory_accepts_trace_level() {
-        let filter = build_filter(serde_json::json!({ "level": "trace" }));
+        let filter = build_filter(ron_value(r#"{"level": "trace"}"#));
         assert_eq!(filter.name(), "access_log");
     }
 
