@@ -35,10 +35,11 @@
 │  TCP ──▶ Worker ──▶ ┌─────────────────────────────────────┐     │
 │  (keep-    (parse,  │         Filter Chain                 │     │
 │   alive,    conn    │                                     │     │
-│   idle      limits) │  rate_limit → auth → cors →         │     │
-│   timeout,          │  access_log → add_header →          │     │
-│   graceful          │  phe → encrypt → kv → router        │     │
-│   shutdown)         │       │              │              │     │
+│   idle      limits) │  rate_limit → auth → sso_bridge →   │     │
+│   timeout,          │  ldap_sync → rbac → cors →          │     │
+│   graceful          │  access_log → audit → add_header →  │     │
+│   shutdown)         │  phe → encrypt → kv → router        │     │
+│                     │       │              │              │     │
 │                     └───────┼──────────────┼──────────────┘     │
 │                             ▼              ▼                    │
 │                     Verdict::Respond   RouteTable               │
@@ -63,26 +64,38 @@
   │ Filter 2  │  auth                            │            │
   │           │  verify JWT / API key            │            │
   │           ▼                                  │            │
-  │ Filter 3  │  cors                            │  add CORS  │
+  │ Filter 3  │  sso_bridge                      │            │
+  │           │  map trusted IdP/LDAP headers    │            │
+  │           ▼                                  │            │
+  │ Filter 4  │  ldap_sync                       │            │
+  │           │  enrich claims from directory    │            │
+  │           ▼                                  │            │
+  │ Filter 5  │  rbac                            │            │
+  │           │  enforce role/scope permissions  │            │
+  │           ▼                                  │            │
+  │ Filter 6  │  cors                            │  add CORS  │
   │           │  handle preflight OPTIONS        │  headers   │
   │           ▼                                  ▲            │
-  │ Filter 4  │  access_log                      │  log req   │
+  │ Filter 7  │  access_log                      │  log req   │
   │           │  record start time               │  + latency │
   │           ▼                                  ▲            │
-  │ Filter 5  │  add_header                      │            │
+  │ Filter 8  │  audit                           │            │
+  │           │  hash-chain audit event          │            │
+  │           ▼                                  │            │
+  │ Filter 9  │  add_header                      │            │
   │           │  inject x-proxy header           │            │
   │           ▼                                  │            │
-  │ Filter 6  │  phe                             │            │
+  │ Filter 10 │  phe                             │            │
   │           │  enroll/verify password-hardened │           │
   │           │  key, store key in metadata      │           │
   │           ▼                                  │            │
-  │ Filter 7  │  encrypt                         │  decrypt   │
+  │ Filter 11 │  encrypt                         │  decrypt   │
   │           │  AES-256-GCM body                │  response  │
   │           ▼                                  ▲            │
-  │ Filter 8  │  kv                              │            │
+  │ Filter 12 │  kv                              │            │
   │           │  handle /kv/* CRUD               │            │
   │           ▼                                  │            │
-  │ Filter 9  │  router (terminal)               │            │
+  │ Filter 13 │  router (terminal)               │            │
   │           │  match route → upstream          │            │
   └───────────┴──────────────────────────────────┴────────────┘
 ```
@@ -99,8 +112,12 @@ Each filter receives `&mut Request` + `&Effects` and returns `Verdict`:
 |---|---|---|
 | `rate_limit` | request | Per-IP sliding-window rate limiter |
 | `auth` | request | JWT (HS256/384/512), API Key (HashMap), Basic Auth (constant-time) |
+| `rbac` | request | RBAC + lightweight RLS (org/branch scope checks, deny-overrides, route permissions) |
 | `cors` | request + response | CORS preflight (OPTIONS → 204), response header injection |
 | `access_log` | request + response | Structured logging: method, path, status, latency (µs), peer addr |
+| `audit` | request + response | Tamper-evident audit trail with SHA-256 hash chain over events |
+| `sso_bridge` | request | Trusted peer header bridge (SSO/LDAP sidecar/gateway) to `AuthIdentity` / `AuthClaims` |
+| `ldap_sync` | request | Claims enrichment from directory (groups/roles/org/branch) with TTL cache |
 | `add_header` | request | Inject static headers (e.g., `x-proxy: proxy_core/0.1`) |
 | `phe` | request | Password-hardened key derivation (P-256), key in metadata only (never in HTTP response) |
 | `encrypt` | request + response | AES-256-GCM body encryption/decryption, HMAC key obfuscation |
@@ -115,7 +132,108 @@ Each filter receives `&mut Request` + `&Effects` and returns `Verdict`:
 - each login guess requires backend/PHE verification (online control + rate limiting);
 - encryption keys are not exposed to clients — only placed into request metadata for downstream filters.
 
-This enables a secure flow like: `auth` → `phe` → `encrypt/kv`, where encrypted profile data is only usable after successful password verification.
+This enables a secure flow like: `auth` → `rbac` → `phe` → `encrypt/kv`, where encrypted profile data is only usable after successful password verification and authorization.
+
+### RBAC + RLS Filter (Iteration 1)
+
+`rbac` consumes metadata from `auth` (`AuthIdentity`, `AuthClaims`) and enforces:
+- **role permissions**: claims (`role` / `roles`) map to permission sets from config;
+- **group expansion**: claims `groups` map to roles (e.g., AD/LDAP sync output);
+- **route rules**: per-path-prefix + HTTP method permission checks;
+- **deny-overrides**: global or per-rule `deny_actions` always block;
+- **scope guard (RLS-lite)**: request headers (`x-org-id`, `x-branch-id`) must match claims (`org_id`, `branch_id`).
+
+If identity/claims are missing, or scope/permissions fail, filter short-circuits with `401/403`.
+
+### Audit Filter (Iteration 2)
+
+`audit` emits one event per request on response path and links events with hash chain:
+- `H_0 = 00..00`;
+- `H_n = SHA256(H_{n-1} || event_payload)`.
+
+This provides tamper evidence for runtime audit streams (order + mutation detection).
+Filter is designed to run after `auth`/`rbac` so identity and authorization context are included.
+
+Recommended chain segment: `auth -> rbac -> access_log -> audit -> ...`
+
+Minimal config:
+
+```json
+{
+  "name": "audit",
+  "typed_config": {
+    "skip_paths": ["/health", "/ready"],
+    "include_claims": ["org_id", "branch_id", "role"]
+  }
+}
+```
+
+### SSO/LDAP Bridge Filter (Iteration 3)
+
+`sso_bridge` is needed when identity is established upstream (IdP gateway, ingress, LDAP bridge)
+and delivered as trusted headers. Filter maps those headers into typed metadata used by `rbac`:
+- validates request peer against `trusted_peer_ips`;
+- rejects untrusted attempts to inject identity headers;
+- maps `x-auth-user` / `x-auth-groups` / `x-auth-roles` and scope headers into claims;
+- sets `AuthMethod = sso_bridge` for downstream audit.
+
+Recommended segment: `auth(optional jwt) -> sso_bridge -> ldap_sync(optional) -> rbac -> audit -> ...`
+
+Minimal config:
+
+```json
+{
+  "name": "sso_bridge",
+  "typed_config": {
+    "trusted_peer_ips": ["127.0.0.1"],
+    "require_trusted_peer": true,
+    "deny_untrusted_with_headers": true,
+    "identity_header": "x-auth-user",
+    "groups_header": "x-auth-groups",
+    "roles_header": "x-auth-roles",
+    "org_header": "x-org-id",
+    "branch_header": "x-branch-id",
+    "separator": ","
+  }
+}
+```
+
+### LDAP Sync Filter (Iteration 4)
+
+`ldap_sync` enriches principal claims from a directory source before authorization.
+Current implementation provides a safe baseline with static directory + in-memory TTL cache:
+- requires authenticated identity (`AuthIdentity`) by default;
+- resolves groups/roles/org/branch by principal;
+- applies `group_role_map` expansion;
+- caches enrichment data for configured TTL.
+
+Recommended segment: `sso_bridge -> ldap_sync -> rbac`.
+
+If `ldap_sync` is enabled, preferred IAM segment is:
+`auth(optional jwt) -> sso_bridge -> ldap_sync -> rbac -> audit`.
+
+Minimal config:
+
+```json
+{
+  "name": "ldap_sync",
+  "typed_config": {
+    "cache_ttl_secs": 60,
+    "require_identity": true,
+    "directory": {
+      "alice": {
+        "groups": ["finance"],
+        "roles": ["accountant"],
+        "org_id": "org-1",
+        "branch_id": "b-1"
+      }
+    },
+    "group_role_map": {
+      "finance": ["report_viewer"]
+    }
+  }
+}
+```
 
 ### PHE Protocol Flow (Implemented)
 
@@ -299,8 +417,8 @@ curl -v --http1.1 http://127.0.0.1:8080/kv/hello http://127.0.0.1:8080/kv/
 ### Run tests
 
 ```bash
-cargo test                  # 224 tests, no redb
-cargo test --features redb  # + 20 redb integration tests
+cargo test                  # current default test suite
+cargo test --features redb  # includes redb integration tests
 ```
 
 ---
@@ -320,8 +438,10 @@ The filter chain is defined as JSON (passed programmatically or from a config fi
       "name": "auth",
       "typed_config": {
         "strategy": "jwt",
-        "jwt_secret": "your-256-bit-secret",
-        "jwt_algorithm": "HS256",
+        "jwt": {
+          "secret": "your-256-bit-secret",
+          "algorithm": "HS256"
+        },
         "skip_paths": ["/healthz", "/public"]
       }
     },
@@ -362,7 +482,7 @@ The filter chain is defined as JSON (passed programmatically or from a config fi
 }
 ```
 
-### Minimal production example: `auth -> phe -> encrypt -> kv -> router`
+### Minimal production example: `auth -> sso_bridge -> ldap_sync -> rbac -> audit -> phe -> encrypt -> kv -> router`
 
 ```json
 {
@@ -371,8 +491,83 @@ The filter chain is defined as JSON (passed programmatically or from a config fi
       "name": "auth",
       "typed_config": {
         "strategy": "jwt",
-        "jwt_secret": "change-me-256-bit-secret",
-        "jwt_algorithm": "HS256"
+        "jwt": {
+          "secret": "change-me-256-bit-secret",
+          "algorithm": "HS256"
+        }
+      }
+    },
+    {
+      "name": "sso_bridge",
+      "typed_config": {
+        "trusted_peer_ips": ["127.0.0.1"],
+        "require_trusted_peer": true,
+        "deny_untrusted_with_headers": true,
+        "identity_header": "x-auth-user",
+        "groups_header": "x-auth-groups",
+        "roles_header": "x-auth-roles",
+        "org_header": "x-org-id",
+        "branch_header": "x-branch-id",
+        "separator": ","
+      }
+    },
+    {
+      "name": "ldap_sync",
+      "typed_config": {
+        "cache_ttl_secs": 60,
+        "require_identity": true,
+        "directory": {
+          "alice": {
+            "groups": ["finance"],
+            "roles": ["accountant"],
+            "org_id": "org-1",
+            "branch_id": "b-1"
+          }
+        },
+        "group_role_map": {
+          "finance": ["report_viewer"]
+        }
+      }
+    },
+    {
+      "name": "rbac",
+      "typed_config": {
+        "default_deny": true,
+        "deny_actions": ["doc:post"],
+        "roles": {
+          "accountant": ["doc:view", "doc:edit"],
+          "manager": ["doc:view", "doc:approve"]
+        },
+        "groups": {
+          "finance": ["accountant"]
+        },
+        "rules": [
+          {
+            "path_prefix": "/docs",
+            "methods": ["GET"],
+            "permissions": ["doc:view"],
+            "action": "doc:view"
+          },
+          {
+            "path_prefix": "/docs",
+            "methods": ["PUT"],
+            "permissions": ["doc:edit"],
+            "action": "doc:edit"
+          }
+        ],
+        "scope": {
+          "org_claim": "org_id",
+          "org_header": "x-org-id",
+          "branch_claim": "branch_id",
+          "branch_header": "x-branch-id"
+        }
+      }
+    },
+    {
+      "name": "audit",
+      "typed_config": {
+        "skip_paths": ["/health", "/ready"],
+        "include_claims": ["org_id", "branch_id", "role"]
       }
     },
     {
@@ -437,7 +632,7 @@ Required environment variables for this example:
 | `store` | MemoryStore, RedbStore, Store trait | KV abstraction with transparent encryption |
 | `circuit_breaker` | CircuitBreaker | Per-upstream Closed/Open/HalfOpen state machine |
 | `phe` | PheContext, PheServer, PheClient, PheRecord | Password-hardened encryption protocol on P-256 |
-| `filters/*` | 9 built-in filters | See [Built-in Filters](#built-in-filters) |
+| `filters/*` | 13 built-in filters | See [Built-in Filters](#built-in-filters) |
 
 ---
 
