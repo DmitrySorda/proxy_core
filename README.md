@@ -52,6 +52,24 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+---
+
+## Build Framework (Filters)
+
+proxy_core includes a Build Systems a la Carte framework for building and
+evolving filter logic with explicit dependency graphs. It is useful for:
+
+- compiling filter chains or filter-specific artifacts from config with
+    incremental rebuilds
+- modeling complex filter logic as tasks with explicit deps and trace capture
+- comparing rebuild strategies (Busy, Memo, Dirty, Make, Excel, Shake)
+    under real tests and conformance suites
+
+The framework exposes `Task`, `Store`, `Scheduler`, `Rebuilder`, and trace
+tracking to keep filter creation deterministic and testable. It is especially
+handy for filters that want to cache derived data, update only dirty parts, or
+trace dynamic dependencies during rebuilds.
+
 ### Request Pipeline
 
 ```
