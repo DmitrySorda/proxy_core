@@ -32,6 +32,7 @@ use proxy_core::filters::add_header::AddHeaderFactory;
 use proxy_core::filters::auth::AuthFactory;
 use proxy_core::filters::audit::AuditFactory;
 use proxy_core::filters::cors::CorsFactory;
+use proxy_core::filters::compute::ComputeFactory;
 use proxy_core::filters::encrypt::EncryptFactory;
 use proxy_core::filters::kv::KvFactory;
 use proxy_core::filters::ldap_sync::LdapSyncFactory;
@@ -69,6 +70,7 @@ async fn main() {
     registry.register(Box::new(SsoBridgeFactory));
     registry.register(Box::new(LdapSyncFactory));
     registry.register(Box::new(AddHeaderFactory));
+    registry.register(Box::new(ComputeFactory));
     registry.register(Box::new(EncryptFactory));
     registry.register(Box::new(KvFactory));
     registry.register(Box::new(PheFactory));

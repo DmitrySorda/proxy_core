@@ -35,7 +35,7 @@ pub enum Verdict {
 pub struct Effects {
     pub metrics: Arc<Metrics>,
     pub log: RequestLogger,
-    pub http_client: Arc<HttpClient>,
+    pub http_client: Arc<dyn HttpClientLike>,
     pub shared: Arc<SharedState>,
     pub clock: Arc<dyn Clock + Send + Sync>,
 }
@@ -96,6 +96,19 @@ pub mod dashmap_lite {
                 .fetch_add(1, Ordering::Relaxed);
         }
 
+        pub fn add(&self, name: &str, value: u64) {
+            let map = self.map.read().unwrap_or_else(|e| e.into_inner());
+            if let Some(counter) = map.get(name) {
+                counter.fetch_add(value, Ordering::Relaxed);
+                return;
+            }
+            drop(map);
+            let mut map = self.map.write().unwrap_or_else(|e| e.into_inner());
+            map.entry(name.to_string())
+                .or_insert_with(|| AtomicU64::new(0))
+                .fetch_add(value, Ordering::Relaxed);
+        }
+
         pub fn get(&self, name: &str) -> u64 {
             let map = self.map.read().unwrap_or_else(|e| e.into_inner());
             map.get(name)
@@ -118,6 +131,10 @@ impl Metrics {
 
     pub fn counter_get(&self, name: &str) -> u64 {
         self.counters.get(name)
+    }
+
+    pub fn counter_add(&self, name: &str, value: u64) {
+        self.counters.add(name, value);
     }
 }
 
@@ -160,6 +177,19 @@ impl RequestLogger {
 /// a per-worker connection pool.
 pub struct HttpClient;
 
+pub trait HttpClientLike: Send + Sync {
+    fn get<'a>(
+        &'a self,
+        url: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, String>> + Send + 'a>>;
+
+    fn post<'a>(
+        &'a self,
+        url: &'a str,
+        body: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, String>> + Send + 'a>>;
+}
+
 impl HttpClient {
     pub fn new() -> Self {
         Self
@@ -174,6 +204,23 @@ impl HttpClient {
     /// Perform an HTTP POST callout. Placeholder.
     pub async fn post(&self, _url: &str, _body: &[u8]) -> Result<Vec<u8>, String> {
         Ok(Vec::new())
+    }
+}
+
+impl HttpClientLike for HttpClient {
+    fn get<'a>(
+        &'a self,
+        url: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, String>> + Send + 'a>> {
+        Box::pin(async move { self.get(url).await })
+    }
+
+    fn post<'a>(
+        &'a self,
+        url: &'a str,
+        body: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, String>> + Send + 'a>> {
+        Box::pin(async move { self.post(url, body).await })
     }
 }
 

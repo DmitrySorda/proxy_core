@@ -26,6 +26,7 @@ arc-swap = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ron = "0.8"
+regex = "1"
 
 # Hashing for config cache
 twox-hash = "2"

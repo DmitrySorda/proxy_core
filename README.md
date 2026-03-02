@@ -140,7 +140,87 @@ Each filter receives `&mut Request` + `&Effects` and returns `Verdict`:
 | `phe` | request | Password-hardened key derivation (P-256), key in metadata only (never in HTTP response) |
 | `encrypt` | request + response | AES-256-GCM body encryption/decryption, HMAC key obfuscation |
 | `kv` | request | In-process KV store (memory or redb), encrypted at rest |
+| `compute` | request | Per-request compute DAG for headers/metadata/verdict |
 | `router` | request (terminal) | Route dispatch: prefix, exact, pattern (`/users/:id`) → HTTP/redb upstream |
+
+### Compute Filter (Runtime DAG)
+
+`compute` evaluates a per-request DAG of cells against request inputs, query params,
+and typed metadata. It can write headers, metadata, or enforce a verdict.
+
+Key points:
+- `query` inputs support repeated keys (become `List` values)
+- typed metadata is mapped into `metadata` names (e.g., `auth.claims.role`)
+- budgets enforce node, time, and memory limits
+- named subgraphs can be expanded with `call` and an optional `prefix`
+- fetch callouts can be restricted by scheme/host and response size
+- fetch callouts can be capped via `max_fetch_nodes`
+- fetch callouts can be restricted by port and path prefix allowlists
+- fetch callouts can be restricted by host suffix allowlists
+- fetch callouts can be capped by total bytes per request
+
+
+Minimal config:
+
+```ron
+(
+    name: "compute",
+    typed_config: {
+        "max_eval_us": 2000,
+        "cells": [
+            {"key": "role", "op": "input", "source": {"metadata": "auth.claims.role"}},
+            {"key": "is_admin", "op": "compare", "cmp": "eq", "left": "role", "right": {"const": "admin"}},
+            {"key": "tier", "op": "cond", "cond": "is_admin", "then_val": {"const": "unlimited"}, "else_val": {"const": "standard"}},
+            {"key": "out", "op": "output", "target": {"header": "X-Rate-Tier"}, "source": "tier"}
+        ]
+    },
+)
+```
+
+Subgraph example:
+
+```ron
+(
+    name: "compute",
+    typed_config: {
+        "subgraphs": [
+            {
+                "name": "tiering",
+                "cells": [
+                    {"key": "role", "op": "input", "source": {"metadata": "auth.claims.role"}},
+                    {"key": "is_admin", "op": "compare", "cmp": "eq", "left": "role", "right": {"const": "admin"}},
+                    {"key": "tier", "op": "cond", "cond": "is_admin", "then_val": {"const": "unlimited"}, "else_val": {"const": "standard"}}
+                ]
+            }
+        ],
+        "cells": [
+            {"key": "calc", "op": "call", "subgraph": "tiering"},
+            {"key": "out", "op": "output", "target": {"header": "X-Rate-Tier"}, "source": "calc.tier"}
+        ]
+    },
+)
+```
+
+Fetch allowlist example:
+
+```ron
+(
+    name: "compute",
+    typed_config: {
+        "fetch_allow_schemes": ["https"],
+        "fetch_allow_hosts": ["api.example.com"],
+        "fetch_allow_host_suffixes": ["example.org"],
+        "fetch_allow_ports": [443],
+        "fetch_allow_path_prefixes": ["/v1", "/v2"],
+        "fetch_max_bytes": 32768,
+        "cells": [
+            {"key": "url", "op": "const", "value": "https://api.example.com/v1/health"},
+            {"key": "resp", "op": "fetch", "url": "url", "timeout_ms": 100},
+            {"key": "out", "op": "output", "target": {"metadata": "fetch.body"}, "source": "resp"}
+        ]
+    },
+)
+```
 
 ### PHE Module: Why It Exists
 

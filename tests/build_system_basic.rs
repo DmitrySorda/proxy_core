@@ -2,12 +2,100 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use proxy_core::build_system::{
     BasicScheduler, BuildError, BuildSystem, BusyRebuilder, DirtyRebuilder, ExcelScheduler,
     MakeRebuilder, MemoRebuilder, MemoryStore, ShakeRebuilder, Store, Fetch, Task, TaskContext,
     Trace,
 };
+
+// ---------------------------------------------------------------------------
+// Dynamic deps task with simulated IO latency
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum DynValue {
+    Num(i32),
+    Deps(Vec<&'static str>),
+}
+
+struct DynDepsTask {
+    base: Arc<Mutex<HashMap<&'static str, i32>>>,
+    deps_config: Arc<Mutex<HashMap<&'static str, Vec<&'static str>>>>,
+    delay: Duration,
+    counter: Arc<AtomicUsize>,
+}
+
+impl DynDepsTask {
+    fn new(
+        base: HashMap<&'static str, i32>,
+        deps_config: HashMap<&'static str, Vec<&'static str>>,
+        delay: Duration,
+    ) -> Self {
+        Self {
+            base: Arc::new(Mutex::new(base)),
+            deps_config: Arc::new(Mutex::new(deps_config)),
+            delay,
+            counter: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn run_count(&self) -> usize {
+        self.counter.load(Ordering::SeqCst)
+    }
+}
+
+impl Task<&'static str, DynValue> for DynDepsTask {
+    fn run(
+        &self,
+        key: &&'static str,
+        ctx: &mut TaskContext<&'static str, DynValue>,
+    ) -> Result<DynValue, BuildError> {
+        self.counter.fetch_add(1, Ordering::SeqCst);
+        if self.delay > Duration::from_millis(0) {
+            std::thread::sleep(self.delay);
+        }
+
+        if *key == "deps" {
+            let deps = self
+                .deps_config
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get("root")
+                .cloned()
+                .unwrap_or_default();
+            return Ok(DynValue::Deps(deps));
+        }
+
+        if let Some(value) = self
+            .base
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(key)
+            .copied()
+        {
+            return Ok(DynValue::Num(value));
+        }
+
+        if *key == "root" {
+            let deps = match ctx.fetch(&"deps")? {
+                DynValue::Deps(list) => list,
+                _ => return Err(BuildError::TaskFailed("deps_not_list".to_string())),
+            };
+            let mut sum = 0;
+            for dep in deps {
+                match ctx.fetch(&dep)? {
+                    DynValue::Num(value) => sum += value,
+                    _ => return Err(BuildError::TaskFailed("dep_not_num".to_string())),
+                }
+            }
+            return Ok(DynValue::Num(sum));
+        }
+
+        Err(BuildError::TaskFailed(format!("unknown key: {key}")))
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Helper tasks
@@ -19,6 +107,65 @@ struct CountingTask {
     deps: HashMap<&'static str, Vec<&'static str>>,
     base: HashMap<&'static str, i32>,
     counter: Arc<AtomicUsize>,
+}
+
+// ---------------------------------------------------------------------------
+// External call simulation (delay + error)
+// ---------------------------------------------------------------------------
+
+struct ExternalTask {
+    deps: HashMap<&'static str, Vec<&'static str>>,
+    results: HashMap<&'static str, Result<i32, String>>,
+    delay: Duration,
+    counter: Arc<AtomicUsize>,
+}
+
+impl ExternalTask {
+    fn new(
+        deps: HashMap<&'static str, Vec<&'static str>>,
+        results: HashMap<&'static str, Result<i32, String>>,
+        delay: Duration,
+    ) -> Self {
+        Self {
+            deps,
+            results,
+            delay,
+            counter: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn run_count(&self) -> usize {
+        self.counter.load(Ordering::SeqCst)
+    }
+}
+
+impl Task<&'static str, i32> for ExternalTask {
+    fn run(
+        &self,
+        key: &&'static str,
+        ctx: &mut TaskContext<&'static str, i32>,
+    ) -> Result<i32, BuildError> {
+        self.counter.fetch_add(1, Ordering::SeqCst);
+        if self.delay > Duration::from_millis(0) {
+            std::thread::sleep(self.delay);
+        }
+
+        if let Some(result) = self.results.get(key) {
+            return result
+                .clone()
+                .map_err(BuildError::TaskFailed);
+        }
+
+        let deps = match self.deps.get(key) {
+            Some(d) => d.clone(),
+            None => return Err(BuildError::TaskFailed(format!("unknown key: {key}"))),
+        };
+        let mut sum = 0;
+        for dep in deps {
+            sum += ctx.fetch(&dep)?;
+        }
+        Ok(sum)
+    }
 }
 
 impl CountingTask {
@@ -202,6 +349,36 @@ fn deep_linear_chain() {
 }
 
 // ===========================================================================
+// 4b. External call simulation with delay/error
+// ===========================================================================
+
+#[test]
+fn external_task_delayed_success() {
+    let deps = HashMap::from([("root", vec!["remote"])]);
+    let results = HashMap::from([("remote", Ok(7))]);
+    let task = ExternalTask::new(deps, results, Duration::from_millis(1));
+    let mut system = make_system_memo();
+
+    let value = system.run(&task, "root").unwrap();
+    assert_eq!(value, 7);
+    assert!(task.run_count() >= 2);
+}
+
+#[test]
+fn external_task_propagates_error() {
+    let deps = HashMap::from([("root", vec!["remote"])]);
+    let results = HashMap::from([("remote", Err("timeout".to_string()))]);
+    let task = ExternalTask::new(deps, results, Duration::from_millis(1));
+    let mut system = make_system_memo();
+
+    let err = system.run(&task, "root").unwrap_err();
+    match err {
+        BuildError::TaskFailed(msg) => assert!(msg.contains("timeout")),
+        other => panic!("expected TaskFailed, got: {:?}", other),
+    }
+}
+
+// ===========================================================================
 // 5. Pre-populated store — MemoRebuilder skips computation
 // ===========================================================================
 
@@ -340,6 +517,41 @@ fn three_node_cycle_detected() {
         system.run(&task, "a").unwrap_err(),
         BuildError::CycleDetected
     ));
+}
+
+// ===========================================================================
+// 12b. Dynamic dependencies with simulated latency
+// ===========================================================================
+
+#[test]
+fn dynamic_deps_with_latency() {
+    let base = HashMap::from([("a", 2), ("b", 3)]);
+    let deps_config = HashMap::from([("root", vec!["a", "b"])]);
+    let task = DynDepsTask::new(base, deps_config, Duration::from_millis(1));
+    let mut system = BuildSystem::new(BasicScheduler, MemoRebuilder, MemoryStore::new());
+
+    let result = system.run(&task, "root").unwrap();
+    assert_eq!(result, DynValue::Num(5));
+    assert!(task.run_count() >= 3);
+}
+
+#[test]
+fn dynamic_deps_recompute_on_change_with_busy() {
+    let base = HashMap::from([("a", 2), ("b", 3), ("c", 4)]);
+    let deps_config = HashMap::from([("root", vec!["a", "b"])]);
+    let task = DynDepsTask::new(base, deps_config, Duration::from_millis(0));
+    let mut system = BuildSystem::new(BasicScheduler, BusyRebuilder, MemoryStore::new());
+
+    let first = system.run(&task, "root").unwrap();
+    assert_eq!(first, DynValue::Num(5));
+
+    task.deps_config
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert("root", vec!["a", "b", "c"]);
+
+    let second = system.run(&task, "root").unwrap();
+    assert_eq!(second, DynValue::Num(9));
 }
 
 // ===========================================================================

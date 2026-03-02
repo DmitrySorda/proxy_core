@@ -259,9 +259,11 @@ impl FilterFactory for LdapSyncFactory {
 mod tests {
     use super::*;
     use crate::builder::ron_value;
-    use crate::filter::{Clock, HttpClient, Metrics, RequestLogger, SharedState};
+    use crate::filter::{Clock, Metrics, RequestLogger, SharedState};
     use crate::filter::SystemClock;
+    use crate::test_support::TestHttpClient;
     use http::{Method, Uri};
+    use std::collections::HashMap;
     use std::net::SocketAddr;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -292,7 +294,7 @@ mod tests {
         Effects {
             metrics: Arc::new(Metrics::new()),
             log: RequestLogger::new("127.0.0.1:0".parse().unwrap()),
-            http_client: Arc::new(HttpClient::new()),
+            http_client: TestHttpClient::boxed(HashMap::new()),
             shared: Arc::new(SharedState::new()),
             clock: Arc::new(SystemClock),
         }
@@ -302,7 +304,7 @@ mod tests {
         Effects {
             metrics: Arc::new(Metrics::new()),
             log: RequestLogger::new("127.0.0.1:0".parse().unwrap()),
-            http_client: Arc::new(HttpClient::new()),
+            http_client: TestHttpClient::boxed(HashMap::new()),
             shared: Arc::new(SharedState::new()),
             clock,
         }

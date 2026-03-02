@@ -415,10 +415,12 @@ fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
     use crate::builder::{FilterFactory, ron_value};
-    use crate::filter::{Effects, HttpClient, Metrics, RequestLogger, SharedState, SystemClock};
+    use crate::filter::{Effects, Metrics, RequestLogger, SharedState, SystemClock};
+    use crate::test_support::TestHttpClient;
     use crate::types::BodyStream;
     use bytes::Bytes;
     use http::{Method, Uri};
+    use std::collections::HashMap;
     use std::net::SocketAddr;
     use std::sync::Arc;
 
@@ -426,7 +428,7 @@ mod tests {
         Effects {
             metrics: Arc::new(Metrics::new()),
             log: RequestLogger::new("127.0.0.1:9999".parse().unwrap()),
-            http_client: Arc::new(HttpClient::new()),
+            http_client: TestHttpClient::boxed(HashMap::new()),
             shared: Arc::new(SharedState::new()),
             clock: Arc::new(SystemClock),
         }

@@ -139,14 +139,16 @@ impl FilterFactory for AccessLogFactory {
 mod tests {
     use super::*;
     use crate::builder::ron_value;
-    use crate::filter::{Clock, HttpClient, Metrics, RequestLogger, SharedState};
+    use crate::filter::{Clock, Metrics, RequestLogger, SharedState};
+    use crate::test_support::TestHttpClient;
     use http::{Method, StatusCode, Uri};
+    use std::collections::HashMap;
 
     fn test_effects() -> Effects {
         Effects {
             metrics: Arc::new(Metrics::new()),
             log: RequestLogger::new("127.0.0.1:8080".parse().unwrap()),
-            http_client: Arc::new(HttpClient::new()),
+            http_client: TestHttpClient::boxed(HashMap::new()),
             shared: Arc::new(SharedState::new()),
             clock: Arc::new(crate::filter::SystemClock),
         }
@@ -230,7 +232,7 @@ mod tests {
         let fx = Effects {
             metrics: Arc::new(Metrics::new()),
             log: RequestLogger::new("127.0.0.1:8080".parse().unwrap()),
-            http_client: Arc::new(HttpClient::new()),
+            http_client: TestHttpClient::boxed(HashMap::new()),
             shared: Arc::new(SharedState::new()),
             clock,
         };

@@ -119,7 +119,9 @@ pub fn new_active_chain(initial: FilterChain) -> ActiveChain {
 mod tests {
     use super::*;
     use crate::filter::*;
+    use crate::test_support::TestHttpClient;
     use http::{Method, StatusCode, Uri};
+    use std::collections::HashMap;
     use std::net::SocketAddr;
 
     /// A test filter that adds a header.
@@ -173,7 +175,7 @@ mod tests {
         Effects {
             metrics: Arc::new(Metrics::new()),
             log: RequestLogger::new("127.0.0.1:0".parse().unwrap()),
-            http_client: Arc::new(HttpClient::new()),
+            http_client: TestHttpClient::boxed(HashMap::new()),
             shared: Arc::new(SharedState::new()),
             clock: Arc::new(SystemClock),
         }

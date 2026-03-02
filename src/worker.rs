@@ -8,7 +8,7 @@
 //! - Lock-free chain loading via ArcSwap
 
 use crate::chain::ActiveChain;
-use crate::filter::{Effects, HttpClient, Metrics, RequestLogger, SharedState, SystemClock};
+use crate::filter::{Effects, HttpClient, HttpClientLike, Metrics, RequestLogger, SharedState, SystemClock};
 use crate::types::{BodyStream, Request, Response};
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode, Uri, Version};
@@ -120,7 +120,7 @@ pub struct Worker {
     pub chain: ActiveChain,
     pub config: WorkerConfig,
     pub metrics: Arc<Metrics>,
-    pub http_client: Arc<HttpClient>,
+    pub http_client: Arc<dyn HttpClientLike>,
     pub shared: Arc<SharedState>,
     pub connections: Arc<ConnectionTracker>,
 }
@@ -132,7 +132,7 @@ impl Worker {
             chain,
             config: WorkerConfig::default(),
             metrics: Arc::new(Metrics::new()),
-            http_client: Arc::new(HttpClient::new()),
+            http_client: Arc::new(HttpClient::new()) as Arc<dyn HttpClientLike>,
             shared: Arc::new(SharedState::new()),
             connections: Arc::new(ConnectionTracker::new()),
         }
@@ -144,7 +144,7 @@ impl Worker {
             chain,
             config,
             metrics: Arc::new(Metrics::new()),
-            http_client: Arc::new(HttpClient::new()),
+            http_client: Arc::new(HttpClient::new()) as Arc<dyn HttpClientLike>,
             shared: Arc::new(SharedState::new()),
             connections: Arc::new(ConnectionTracker::new()),
         }
